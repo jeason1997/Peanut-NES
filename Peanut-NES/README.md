@@ -205,7 +205,8 @@ gcc -std=c11 -O2 nes_sdl.c $(sdl2-config --cflags --libs) -o nes_sdl
 ```bash
 python3 tools/generate_single_header.py \
   --input /path/to/original/nes \
-  --output /path/to/Peanut-NES/nes.h
+  --output /path/to/Peanut-NES/nes.h \
+  --mappers all
 ```
 
 在当前仓库布局中，可从工程根目录执行：
@@ -215,6 +216,41 @@ python3 Peanut-NES/tools/generate_single_header.py \
   --input . \
   --output Peanut-NES/nes.h
 ```
+
+默认会包含所有已有 Mapper。资源受限的平台可以只生成游戏实际需要的 Mapper：
+
+`--mappers all`（以及不提供 `--mappers` 参数）会完整保留原始
+`src/nes_mapper.c`，包括全部前置声明和调度逻辑，生成结果与未加入筛选功能前一致。
+
+```bash
+python3 Peanut-NES/tools/generate_single_header.py \
+  --input . \
+  --output Peanut-NES/nes.h \
+  --mappers 0,1,2,3,4,7
+```
+
+Mapper 参数支持单个编号、逗号列表和闭区间，三种写法可以组合：
+
+```bash
+# 只包含 Mapper 0
+--mappers 0
+
+# 包含 Mapper 0、1、2、4
+--mappers 0,1,2,4
+
+# 包含 Mapper 0～4、7、10～25
+--mappers 0-4,7,10-25
+```
+
+短参数形式为 `-m`：
+
+```bash
+python3 Peanut-NES/tools/generate_single_header.py -i . -o Peanut-NES/nes.h -m 0,1,2,4
+```
+
+生成器会同时过滤 Mapper 实现和调度器中的加载分支。若 ROM 使用了未包含的
+Mapper，`nes_load_rom()` 会报告该 Mapper 不受支持。传入不存在的 Mapper 编号时，
+生成器会直接报错，不会产生不完整的头文件。
 
 查看完整参数：
 
