@@ -53,9 +53,6 @@ dkms.conf
 .vscode
 .xmake
 
-/rom
-*.nes
-*.NES
 **/build
 vsxmake2022
 
