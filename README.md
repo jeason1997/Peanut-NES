@@ -1,4 +1,6 @@
-**English** | [中文](./README_zh.md) 
+**English** | [中文](./README_zh.md)
+
+> **Single-header edition:** [Peanut-NES — portable `nes.h` for embedded platforms](./Peanut-NES/README.md)
 
 
 

@@ -1,5 +1,7 @@
 [**English**](./README.md)  | **中文**
 
+> **单头文件版本：** [Peanut-NES——面向 STM32 等嵌入式平台的可移植 `nes.h`](./Peanut-NES/README.md)
+
 
 
 # nes 模拟器
