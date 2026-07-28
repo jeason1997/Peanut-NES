@@ -53,6 +53,15 @@
 #define NES_RAM_LACK            (0)
 #endif
 
+/*
+ * 逐行渲染模式：
+ * - 0：保持原有整帧/半帧缓冲及 nes_draw() 接口；
+ * - 1：仅保留 256 像素的扫描行缓冲，并在每条可见扫描线完成后调用回调。
+ */
+#ifndef NES_RENDER_LINE
+#define NES_RENDER_LINE         (0)
+#endif
+
 #ifndef NES_ROM_STREAM
 #define NES_ROM_STREAM          (0)       /* stream ROM banks from file instead of loading entire ROM into RAM */
 #endif
@@ -66,7 +75,9 @@
 #endif
 #endif
 
-#if (NES_RAM_LACK == 1)
+#if (NES_RENDER_LINE == 1)
+#define NES_DRAW_SIZE           (NES_WIDTH)
+#elif (NES_RAM_LACK == 1)
 #define NES_DRAW_SIZE           (NES_WIDTH * NES_HEIGHT / 2) 
 #else
 #define NES_DRAW_SIZE           (NES_WIDTH * NES_HEIGHT)

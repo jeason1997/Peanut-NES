@@ -13,11 +13,27 @@
 #define NES_USE_FS 0
 #define NES_ENABLE_SOUND 0
 #define NES_COLOR_DEPTH 16
+#define NES_RENDER_LINE 1
 #define NES_LOG_LEVEL 3
 #define nes_log_printf(...) printf(__VA_ARGS__)
 #define NES_IMPLEMENTATION
 #include "../nes.h"
 #include "game.h"
+
+/*
+ * 逐行显示回调，当前只保留移植接口。
+ *
+ * pixels 是一行 256 个 RGB565 像素。实际移植时可在这里设置 LCD 地址窗口，
+ * 然后通过 SPI、8080 并口或 DMA 立即发送这一行。回调返回后缓冲会被复用。
+ */
+static void lcd_draw_line(nes_t *nes,
+                          const nes_color_t pixels[NES_WIDTH],
+                          uint16_t line)
+{
+    (void)nes;
+    (void)pixels;
+    (void)line;
+}
 
 int nes_initex(nes_t *nes)
 {
@@ -96,6 +112,7 @@ int main(void)
         printf("模拟器实例创建失败。\n");
         return 1;
     }
+    nes->nes_draw_line = lcd_draw_line;
 
     /*
      * game_rom 由 game.h 提供。嵌入式编译器通常会把 const 数组放入

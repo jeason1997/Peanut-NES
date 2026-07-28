@@ -4,14 +4,22 @@
  * 编译：
  *   gcc -std=c11 -O2 nes_sdl.c $(sdl2-config --cflags --libs) -o nes_sdl
  *
+ * 启用逐行渲染：
+ *   gcc -std=c11 -O2 -DNES_SDL_RENDER_LINE=1 nes_sdl.c $(sdl2-config --cflags --libs) -o nes_sdl_line
+ *
  * 运行：
  *   ./nes_sdl /path/to/game.nes
  */
+
+#ifndef NES_SDL_RENDER_LINE
+#define NES_SDL_RENDER_LINE 0
+#endif
 
 #define NES_ENABLE_SOUND 1
 #define NES_USE_FS 1
 #define NES_USE_SRAM 0
 #define NES_COLOR_DEPTH 32
+#define NES_RENDER_LINE NES_SDL_RENDER_LINE
 #define NES_ENABLE_HEAVY_MAPPERS 1
 #define NES_LOG_LEVEL 3
 #define nes_log_printf(...) printf(__VA_ARGS__)
@@ -25,6 +33,24 @@ static SDL_Renderer *s_renderer;
 static SDL_Texture *s_texture;
 static SDL_AudioDeviceID s_audio_device;
 static uint64_t s_next_frame_tick;
+
+#if (NES_RENDER_LINE == 1)
+/*
+ * 逐行模式：核心每完成一条扫描线就调用本函数。
+ * SDL_UpdateTexture 会立即复制像素，因此回调返回后核心可以安全复用行缓冲。
+ */
+static void nes_sdl_draw_line(nes_t *nes,
+                              const nes_color_t pixels[NES_WIDTH],
+                              uint16_t line)
+{
+    const SDL_Rect rect = {0, (int)line, NES_WIDTH, 1};
+    (void)nes;
+    if (s_texture != NULL) {
+        SDL_UpdateTexture(s_texture, &rect, pixels,
+                          NES_WIDTH * (int)sizeof(nes_color_t));
+    }
+}
+#endif
 
 static void nes_sdl_set_key(nes_t *nes, SDL_Scancode key, uint8_t pressed)
 {
@@ -205,6 +231,13 @@ int main(int argc, char **argv)
         }
         return 1;
     }
+
+#if (NES_RENDER_LINE == 1)
+    nes->nes_draw_line = nes_sdl_draw_line;
+    printf("渲染模式：逐行渲染（256×1 行缓冲）。\n");
+#else
+    printf("渲染模式：整屏渲染（256×240 帧缓冲）。\n");
+#endif
 
     if (nes_load_file(nes, argv[1]) != NES_OK) {
         fprintf(stderr, "ROM 加载失败：%s\n", argv[1]);

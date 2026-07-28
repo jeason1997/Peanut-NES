@@ -50,6 +50,20 @@
 #define NES_OK                  (0) 
 #define NES_ERROR               (-1)
 
+struct nes;
+
+#if (NES_RENDER_LINE == 1)
+/*
+ * 扫描线输出回调。
+ *
+ * pixels 包含 NES_WIDTH 个已经完成背景与精灵混合的像素。该缓冲区只在
+ * 本次回调期间有效；回调返回后，下一条扫描线会复用它。
+ */
+typedef void (*nes_draw_line_t)(struct nes *nes,
+                                const nes_color_t pixels[NES_WIDTH],
+                                uint16_t line);
+#endif
+
 typedef struct nes{
     uint8_t nes_quit;
 #if (NES_FRAME_SKIP != 0)
@@ -64,6 +78,9 @@ typedef struct nes{
 #endif
     nes_mapper_t nes_mapper;
     nes_color_t nes_draw_data[NES_DRAW_SIZE];
+#if (NES_RENDER_LINE == 1)
+    nes_draw_line_t nes_draw_line;
+#endif
 } nes_t;
 
 /*

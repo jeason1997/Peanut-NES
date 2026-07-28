@@ -189,6 +189,21 @@ typedef struct {
     sprite_line_entry_t sprite[8];
 } sprite_line_t;
 
+/*
+ * 获取当前扫描线的像素缓冲。
+ * 逐行模式始终复用同一条扫描线；兼容模式保持原有整帧或半帧布局。
+ */
+static inline nes_color_t* nes_get_scanline_buffer(nes_t* nes, uint16_t scanline){
+#if (NES_RENDER_LINE == 1)
+    (void)scanline;
+    return nes->nes_draw_data;
+#elif (NES_RAM_LACK == 1)
+    return nes->nes_draw_data + scanline % (NES_HEIGHT / 2) * NES_WIDTH;
+#else
+    return nes->nes_draw_data + scanline * NES_WIDTH;
+#endif
+}
+
 static void nes_prepare_sprite_line(nes_t* nes,uint16_t scanline,sprite_line_t* sprite_line){
     const sprite_info_t* sprite_info_arr = nes->nes_ppu.sprite_info;
     uint8_t** pattern_table = nes->nes_ppu.pattern_table;
@@ -404,6 +419,7 @@ void nes_run(nes_t* nes){
         for(nes->scanline = 0; nes->scanline < NES_HEIGHT; nes->scanline++) { // 0-239 Visible frame
             uint16_t scanline_ticks = 113;
             sprite_line_t sprite_line = {0};
+            nes_color_t* line_data = nes_get_scanline_buffer(nes, nes->scanline);
             dot_remainder += 2;
             if (dot_remainder >= 3) { dot_remainder -= 3; scanline_ticks = 114; }
             if (nes->nes_ppu.MASK_s){
@@ -416,22 +432,13 @@ void nes_run(nes_t* nes){
                 if (nes->nes_frame_skip_count == 0)
 #endif
                 {
-#if (NES_RAM_LACK == 1)
-                nes_render_background_line(nes, nes->scanline, nes->nes_draw_data + nes->scanline%(NES_HEIGHT/2) * NES_WIDTH);
-#else
-                nes_render_background_line(nes, nes->scanline, nes->nes_draw_data + nes->scanline * NES_WIDTH);
-#endif
+                nes_render_background_line(nes, nes->scanline, line_data);
                 }
             } else {
 #if (NES_FRAME_SKIP != 0)
                 if (nes->nes_frame_skip_count == 0)
 #endif
                 {
-#if (NES_RAM_LACK == 1)
-                nes_color_t* line_data = nes->nes_draw_data + nes->scanline%(NES_HEIGHT/2) * NES_WIDTH;
-#else
-                nes_color_t* line_data = nes->nes_draw_data + nes->scanline * NES_WIDTH;
-#endif
                 for (uint16_t x = 0; x < NES_WIDTH; x++) {
                     line_data[x] = nes->nes_ppu.background_palette[0];
                 }
@@ -441,12 +448,18 @@ void nes_run(nes_t* nes){
             if (nes->nes_ppu.MASK_s){
                 if (nes->nes_mapper.mapper_render_screen)
                     nes->nes_mapper.mapper_render_screen(nes, 0);
-#if (NES_RAM_LACK == 1)
-                nes_render_sprite_line(nes, &sprite_line,nes->nes_draw_data + nes->scanline%(NES_HEIGHT/2) * NES_WIDTH);
-#else
-                nes_render_sprite_line(nes, &sprite_line,nes->nes_draw_data + nes->scanline * NES_WIDTH);
-#endif
+                nes_render_sprite_line(nes, &sprite_line, line_data);
             }
+#if (NES_RENDER_LINE == 1)
+#if (NES_FRAME_SKIP != 0)
+            if (nes->nes_frame_skip_count == 0)
+#endif
+            {
+                if (nes->nes_draw_line != NULL){
+                    nes->nes_draw_line(nes, line_data, nes->scanline);
+                }
+            }
+#endif
             nes_opcode(nes,85); // ppu cycles: 85*3=255
             // https://www.nesdev.org/wiki/PPU_scrolling#Wrapping_around
             if (nes->nes_ppu.MASK_b || nes->nes_ppu.MASK_s){
@@ -480,7 +493,7 @@ void nes_run(nes_t* nes){
 #if (NES_ENABLE_SOUND==1)
             if (nes->scanline % 66 == 65) nes_apu_frame(nes);
 #endif
-#if (NES_RAM_LACK == 1)
+#if (NES_RENDER_LINE == 0) && (NES_RAM_LACK == 1)
 #if (NES_FRAME_SKIP != 0)
             if(nes->nes_frame_skip_count == 0)
 #endif
@@ -493,7 +506,7 @@ void nes_run(nes_t* nes){
             }
 #endif
         }
-#if (NES_RAM_LACK == 0)
+#if (NES_RENDER_LINE == 0) && (NES_RAM_LACK == 0)
 #if (NES_FRAME_SKIP != 0)
         if(nes->nes_frame_skip_count == 0)
 #endif

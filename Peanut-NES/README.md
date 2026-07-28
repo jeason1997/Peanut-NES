@@ -27,6 +27,7 @@ Peanut-NES/
 ├── tests/
 │   ├── single_header_compile.c   最小嵌入式移植模板
 │   ├── nes_sdl.c                 SDL2 桌面运行示例
+│   ├── size_check.c              静态内存占用检查
 │   └── game.h                    ROM 数组头文件
 └── tools/
     ├── generate_single_header.py 从主工程生成 nes.h
@@ -41,6 +42,7 @@ Peanut-NES/
 #define NES_USE_FS 0
 #define NES_ENABLE_SOUND 0
 #define NES_COLOR_DEPTH 16
+#define NES_RENDER_LINE 1
 
 #define NES_IMPLEMENTATION
 #include "nes.h"
@@ -74,6 +76,53 @@ int nes_sound_output(uint8_t *buffer, size_t len);
 - `nes_draw()`：把指定矩形的像素发送到 LCD 或帧缓冲区；
 - `nes_frame()`：扫描按键、进行 60 Hz 帧同步并处理退出条件；
 - `nes_sound_output()`：把音频数据送入 DAC、I2S 或 DMA。
+
+### 逐行渲染（低内存平台推荐）
+
+默认 `NES_RENDER_LINE=0`，继续使用原有整帧或半帧缓冲和 `nes_draw()`，因此现有
+平台代码无需修改。
+
+STM32F103 等 RAM 较小的平台应启用：
+
+```c
+#define NES_COLOR_DEPTH 16
+#define NES_RENDER_LINE 1
+#define NES_IMPLEMENTATION
+#include "nes.h"
+```
+
+启用后，模拟器不再申请 `256 × 240` 帧缓冲，只保留一行 `256` 像素：
+
+- RGB565：扫描线缓冲为 512 字节；
+- ARGB8888：扫描线缓冲为 1024 字节。
+
+定义并注册逐行回调：
+
+```c
+static void lcd_draw_line(nes_t *nes,
+                          const nes_color_t pixels[NES_WIDTH],
+                          uint16_t line)
+{
+    (void)nes;
+
+    /* 示例：设置 LCD 写入窗口，然后立即发送这一行。 */
+    lcd_set_window(0, line, NES_WIDTH - 1, line);
+    lcd_write_pixels(pixels, NES_WIDTH);
+}
+
+int main(void)
+{
+    nes_t *nes = nes_init();
+    nes->nes_draw_line = lcd_draw_line;
+
+    /* 加载 ROM 后运行…… */
+}
+```
+
+`pixels` 已经完成背景和精灵混合，只在回调执行期间有效；回调返回后同一缓冲区会被
+下一条扫描线复用。如果使用 DMA，必须在返回前等待传输完成，或者把该行复制到由
+平台管理的双缓冲中。逐行模式下不会调用 `nes_draw()`，但该接口仍保留以兼容原有
+整屏模式。
 
 按键状态保存在：
 
@@ -151,9 +200,25 @@ sudo apt install build-essential libsdl2-dev
 
 ```bash
 cd Peanut-NES/tests
+
+# 默认整屏渲染
 gcc -std=c11 -O2 nes_sdl.c $(sdl2-config --cflags --libs) -o nes_sdl
 ./nes_sdl /path/to/game.nes
 ```
+
+使用同一个 SDL 示例测试逐行渲染：
+
+```bash
+gcc -std=c11 -O2 -DNES_SDL_RENDER_LINE=1 \
+  nes_sdl.c $(sdl2-config --cflags --libs) \
+  -o nes_sdl_line
+
+./nes_sdl_line /path/to/game.nes
+```
+
+`NES_SDL_RENDER_LINE=0` 时调用原有 `nes_draw()` 更新整帧纹理；设为 `1` 时会映射
+到核心的 `NES_RENDER_LINE=1`，每生成一条扫描线便更新 SDL 纹理。窗口仍在一帧
+结束后统一呈现，以避免显示撕裂。
 
 默认按键：
 
@@ -178,6 +243,7 @@ gcc -std=c11 -O2 nes_sdl.c $(sdl2-config --cflags --libs) -o nes_sdl
 | `NES_COLOR_DEPTH` | `32` | `16` 为 RGB565，`32` 为 ARGB8888 |
 | `NES_COLOR_SWAP` | `0` | RGB565 字节/通道交换 |
 | `NES_RAM_LACK` | `0` | 启用低内存绘制模式 |
+| `NES_RENDER_LINE` | `0` | 逐行输出，只保留一条扫描线缓冲 |
 | `NES_FRAME_SKIP` | `0` | 跳帧数量 |
 | `NES_ROM_STREAM` | `0` | 从文件流式读取 ROM Bank |
 | `NES_ENABLE_HEAVY_MAPPERS` | `0` | 启用内存占用较大的 Mapper |
@@ -190,13 +256,27 @@ gcc -std=c11 -O2 nes_sdl.c $(sdl2-config --cflags --libs) -o nes_sdl
 #define NES_USE_FS 0
 #define NES_ENABLE_SOUND 0
 #define NES_COLOR_DEPTH 16
-#define NES_RAM_LACK 1
+#define NES_RENDER_LINE 1
 #define NES_FRAME_SKIP 0
 #define NES_ENABLE_HEAVY_MAPPERS 0
 ```
 
 实际 RAM 和 Flash 占用会受到 ROM 大小、画面模式、声音和 Mapper 的明显影响，
 应结合目标芯片的链接映射文件进行确认。
+
+可以在桌面环境快速比较 `nes_t` 的静态内存占用：
+
+```bash
+cd Peanut-NES/tests
+
+# RGB565 逐行模式
+gcc -std=c11 -DNES_COLOR_DEPTH=16 -DNES_RENDER_LINE=1 size_check.c -o size_line
+./size_line
+
+# RGB565 原整帧模式
+gcc -std=c11 -DNES_COLOR_DEPTH=16 size_check.c -o size_frame
+./size_frame
+```
 
 ## 从主工程重新生成 `nes.h`
 
