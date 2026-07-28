@@ -14,6 +14,7 @@
 #define NES_ENABLE_SOUND 0
 #define NES_COLOR_DEPTH 16
 #define NES_RENDER_LINE 1
+#define NES_USE_STATIC_INSTANCE 1
 #define NES_LOG_LEVEL 3
 #define nes_log_printf(...) printf(__VA_ARGS__)
 #define NES_IMPLEMENTATION
@@ -26,9 +27,9 @@
  * pixels 是一行 256 个 RGB565 像素。实际移植时可在这里设置 LCD 地址窗口，
  * 然后通过 SPI、8080 并口或 DMA 立即发送这一行。回调返回后缓冲会被复用。
  */
-static void lcd_draw_line(nes_t *nes,
-                          const nes_color_t pixels[NES_WIDTH],
-                          uint16_t line)
+void nes_draw_line(nes_t *nes,
+                   const nes_color_t pixels[NES_WIDTH],
+                   uint16_t line)
 {
     (void)nes;
     (void)pixels;
@@ -107,13 +108,15 @@ int main(void)
     nes_t *nes;
     int result = 1;
 
+    /*
+     * NES_USE_STATIC_INSTANCE=1 时，nes_init() 自动使用库内部的静态实例，
+     * 不调用 malloc；nes_deinit() 也不会 free 该实例。
+     */
     nes = nes_init();
     if (nes == NULL) {
         printf("模拟器实例创建失败。\n");
         return 1;
     }
-    nes->nes_draw_line = lcd_draw_line;
-
     /*
      * game_rom 由 game.h 提供。嵌入式编译器通常会把 const 数组放入
      * Flash/只读数据区，不占用运行时栈空间。

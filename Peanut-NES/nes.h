@@ -104,6 +104,15 @@
 #define NES_RENDER_LINE         (0)
 #endif
 
+/*
+ * 静态实例模式：
+ * - 0：nes_init() 使用 nes_malloc()，nes_deinit() 使用 nes_free()；
+ * - 1：nes_init() 使用内部静态 nes_t，不依赖堆。
+ */
+#ifndef NES_USE_STATIC_INSTANCE
+#define NES_USE_STATIC_INSTANCE (0)
+#endif
+
 #ifndef NES_ROM_STREAM
 #define NES_ROM_STREAM          (0)       /* stream ROM banks from file instead of loading entire ROM into RAM */
 #endif
@@ -1063,20 +1072,6 @@ int nes_load_mapper(nes_t* nes);
 #define NES_OK                  (0) 
 #define NES_ERROR               (-1)
 
-struct nes;
-
-#if (NES_RENDER_LINE == 1)
-/*
- * 扫描线输出回调。
- *
- * pixels 包含 NES_WIDTH 个已经完成背景与精灵混合的像素。该缓冲区只在
- * 本次回调期间有效；回调返回后，下一条扫描线会复用它。
- */
-typedef void (*nes_draw_line_t)(struct nes *nes,
-                                const nes_color_t pixels[NES_WIDTH],
-                                uint16_t line);
-#endif
-
 typedef struct nes{
     uint8_t nes_quit;
 #if (NES_FRAME_SKIP != 0)
@@ -1091,9 +1086,6 @@ typedef struct nes{
 #endif
     nes_mapper_t nes_mapper;
     nes_color_t nes_draw_data[NES_DRAW_SIZE];
-#if (NES_RENDER_LINE == 1)
-    nes_draw_line_t nes_draw_line;
-#endif
 } nes_t;
 
 /*
@@ -1103,8 +1095,18 @@ typedef struct nes{
  */
 nes_t* nes_init(void);
 
+#if (NES_USE_STATIC_INSTANCE == 1)
 /*
- * Deinitialize a NES instance created by nes_init and free its memory.
+ * 使用调用者提供的静态存储初始化 NES 实例，不申请堆内存。
+ *
+ * NES_USE_STATIC_INSTANCE=1 时，nes_deinit() 不会释放 nes_t 本身。
+ */
+nes_t* nes_init_static(nes_t* nes);
+#endif
+
+/*
+ * Deinitialize a NES instance created by nes_init.
+ * Dynamic mode frees the instance; static mode only releases platform resources.
  *
  * Returns NES_OK on success or NES_ERROR on failure.
  */
@@ -1163,6 +1165,18 @@ int nes_deinitex(nes_t* nes);
  * Platform hook called after each emulated frame.
  */
 void nes_frame(nes_t* nes);
+
+#if (NES_RENDER_LINE == 1)
+/*
+ * 平台扫描线输出接口。
+ *
+ * pixels 包含 NES_WIDTH 个已经完成背景与精灵混合的像素。该缓冲区只在
+ * 本次调用期间有效；函数返回后，下一条扫描线会复用它。
+ */
+void nes_draw_line(nes_t* nes,
+                   const nes_color_t pixels[NES_WIDTH],
+                   uint16_t line);
+#endif
 
 #ifdef __cplusplus          
     }
@@ -3982,7 +3996,25 @@ static nes_color_t nes_palette[]={
 #endif /* NES_COLOR_DEPTH */
 };
 
+#if (NES_USE_STATIC_INSTANCE == 1)
+static nes_t nes_static_instance;
+
+nes_t* nes_init_static(nes_t* nes){
+    if (nes == NULL) {
+        return NULL;
+    }
+    nes_memset(nes, 0, sizeof(nes_t));
+    if (nes_initex(nes) != NES_OK) {
+        return NULL;
+    }
+    return nes;
+}
+#endif
+
 nes_t* nes_init(void){
+#if (NES_USE_STATIC_INSTANCE == 1)
+    return nes_init_static(&nes_static_instance);
+#else
     nes_t* nes = (nes_t *)nes_malloc(sizeof(nes_t));
     if (nes == NULL) {
         return NULL;
@@ -3990,15 +4022,20 @@ nes_t* nes_init(void){
     nes_memset(nes, 0, sizeof(nes_t));
     nes_initex(nes);
     return nes;
+#endif
 }
 
 int nes_deinit(nes_t *nes){
+    if (nes == NULL) {
+        return NES_ERROR;
+    }
     nes->nes_quit = 1;
     nes_deinitex(nes);
-    if (nes){
+#if (NES_USE_STATIC_INSTANCE == 0)
+    {
         nes_free(nes);
-        nes = NULL;
     }
+#endif
     return NES_OK;
 }
 
@@ -4398,9 +4435,7 @@ void nes_run(nes_t* nes){
             if (nes->nes_frame_skip_count == 0)
 #endif
             {
-                if (nes->nes_draw_line != NULL){
-                    nes->nes_draw_line(nes, line_data, nes->scanline);
-                }
+                nes_draw_line(nes, line_data, nes->scanline);
             }
 #endif
             nes_opcode(nes,85); // ppu cycles: 85*3=255

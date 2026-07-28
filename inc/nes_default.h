@@ -62,6 +62,15 @@
 #define NES_RENDER_LINE         (0)
 #endif
 
+/*
+ * 静态实例模式：
+ * - 0：nes_init() 使用 nes_malloc()，nes_deinit() 使用 nes_free()；
+ * - 1：nes_init() 使用内部静态 nes_t，不依赖堆。
+ */
+#ifndef NES_USE_STATIC_INSTANCE
+#define NES_USE_STATIC_INSTANCE (0)
+#endif
+
 #ifndef NES_ROM_STREAM
 #define NES_ROM_STREAM          (0)       /* stream ROM banks from file instead of loading entire ROM into RAM */
 #endif

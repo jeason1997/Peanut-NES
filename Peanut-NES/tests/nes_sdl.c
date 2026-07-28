@@ -39,9 +39,9 @@ static uint64_t s_next_frame_tick;
  * 逐行模式：核心每完成一条扫描线就调用本函数。
  * SDL_UpdateTexture 会立即复制像素，因此回调返回后核心可以安全复用行缓冲。
  */
-static void nes_sdl_draw_line(nes_t *nes,
-                              const nes_color_t pixels[NES_WIDTH],
-                              uint16_t line)
+void nes_draw_line(nes_t *nes,
+                   const nes_color_t pixels[NES_WIDTH],
+                   uint16_t line)
 {
     const SDL_Rect rect = {0, (int)line, NES_WIDTH, 1};
     (void)nes;
@@ -233,7 +233,6 @@ int main(int argc, char **argv)
     }
 
 #if (NES_RENDER_LINE == 1)
-    nes->nes_draw_line = nes_sdl_draw_line;
     printf("渲染模式：逐行渲染（256×1 行缓冲）。\n");
 #else
     printf("渲染模式：整屏渲染（256×240 帧缓冲）。\n");

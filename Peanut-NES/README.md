@@ -43,6 +43,7 @@ Peanut-NES/
 #define NES_ENABLE_SOUND 0
 #define NES_COLOR_DEPTH 16
 #define NES_RENDER_LINE 1
+#define NES_USE_STATIC_INSTANCE 1
 
 #define NES_IMPLEMENTATION
 #include "nes.h"
@@ -67,6 +68,12 @@ int nes_deinitex(nes_t *nes);
 int nes_draw(int x1, int y1, int x2, int y2, nes_color_t *pixels);
 void nes_frame(nes_t *nes);
 int nes_sound_output(uint8_t *buffer, size_t len);
+
+#if (NES_RENDER_LINE == 1)
+void nes_draw_line(nes_t *nes,
+                   const nes_color_t pixels[NES_WIDTH],
+                   uint16_t line);
+#endif
 ```
 
 各接口的典型职责：
@@ -96,12 +103,12 @@ STM32F103 等 RAM 较小的平台应启用：
 - RGB565：扫描线缓冲为 512 字节；
 - ARGB8888：扫描线缓冲为 1024 字节。
 
-定义并注册逐行回调：
+实现逐行平台接口：
 
 ```c
-static void lcd_draw_line(nes_t *nes,
-                          const nes_color_t pixels[NES_WIDTH],
-                          uint16_t line)
+void nes_draw_line(nes_t *nes,
+                   const nes_color_t pixels[NES_WIDTH],
+                   uint16_t line)
 {
     (void)nes;
 
@@ -110,19 +117,49 @@ static void lcd_draw_line(nes_t *nes,
     lcd_write_pixels(pixels, NES_WIDTH);
 }
 
-int main(void)
-{
-    nes_t *nes = nes_init();
-    nes->nes_draw_line = lcd_draw_line;
-
-    /* 加载 ROM 后运行…… */
-}
 ```
 
-`pixels` 已经完成背景和精灵混合，只在回调执行期间有效；回调返回后同一缓冲区会被
+不需要注册函数指针。只要定义了 `NES_RENDER_LINE=1`，核心就会自动调用
+`nes_draw_line()`；初始化代码始终保持：
+
+```c
+nes_t *nes = nes_init();
+```
+
+`pixels` 已经完成背景和精灵混合，只在函数执行期间有效；函数返回后同一缓冲区会被
 下一条扫描线复用。如果使用 DMA，必须在返回前等待传输完成，或者把该行复制到由
 平台管理的双缓冲中。逐行模式下不会调用 `nes_draw()`，但该接口仍保留以兼容原有
 整屏模式。
+
+### 静态实例（避免嵌入式堆不足）
+
+默认 `nes_init()` 会通过 `nes_malloc(sizeof(nes_t))` 创建实例。STM32 链接脚本
+通常只给堆预留很小空间，即使 SRAM 总量足够，单次 `malloc` 也可能失败。
+
+启用静态实例：
+
+```c
+#define NES_USE_STATIC_INSTANCE 1
+#define NES_IMPLEMENTATION
+#include "nes.h"
+```
+
+现有调用方式无需改变：
+
+```c
+nes_t *nes = nes_init();
+```
+
+此时 `nes_init()` 使用库内部 `.bss` 中的静态 `nes_t`，不会调用 `nes_malloc()`；
+`nes_deinit()` 会执行平台清理，但不会调用 `nes_free(nes)`。静态模式同一时间只
+适合使用一个由 `nes_init()` 返回的默认实例。
+
+如果希望由应用显式管理静态对象，也可以使用：
+
+```c
+static nes_t nes_storage;
+nes_t *nes = nes_init_static(&nes_storage);
+```
 
 按键状态保存在：
 
@@ -244,6 +281,7 @@ gcc -std=c11 -O2 -DNES_SDL_RENDER_LINE=1 \
 | `NES_COLOR_SWAP` | `0` | RGB565 字节/通道交换 |
 | `NES_RAM_LACK` | `0` | 启用低内存绘制模式 |
 | `NES_RENDER_LINE` | `0` | 逐行输出，只保留一条扫描线缓冲 |
+| `NES_USE_STATIC_INSTANCE` | `0` | 使用静态 `nes_t`，避免 malloc/free |
 | `NES_FRAME_SKIP` | `0` | 跳帧数量 |
 | `NES_ROM_STREAM` | `0` | 从文件流式读取 ROM Bank |
 | `NES_ENABLE_HEAVY_MAPPERS` | `0` | 启用内存占用较大的 Mapper |
@@ -257,6 +295,7 @@ gcc -std=c11 -O2 -DNES_SDL_RENDER_LINE=1 \
 #define NES_ENABLE_SOUND 0
 #define NES_COLOR_DEPTH 16
 #define NES_RENDER_LINE 1
+#define NES_USE_STATIC_INSTANCE 1
 #define NES_FRAME_SKIP 0
 #define NES_ENABLE_HEAVY_MAPPERS 0
 ```

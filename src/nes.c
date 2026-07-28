@@ -39,7 +39,25 @@ static nes_color_t nes_palette[]={
 #endif /* NES_COLOR_DEPTH */
 };
 
+#if (NES_USE_STATIC_INSTANCE == 1)
+static nes_t nes_static_instance;
+
+nes_t* nes_init_static(nes_t* nes){
+    if (nes == NULL) {
+        return NULL;
+    }
+    nes_memset(nes, 0, sizeof(nes_t));
+    if (nes_initex(nes) != NES_OK) {
+        return NULL;
+    }
+    return nes;
+}
+#endif
+
 nes_t* nes_init(void){
+#if (NES_USE_STATIC_INSTANCE == 1)
+    return nes_init_static(&nes_static_instance);
+#else
     nes_t* nes = (nes_t *)nes_malloc(sizeof(nes_t));
     if (nes == NULL) {
         return NULL;
@@ -47,15 +65,20 @@ nes_t* nes_init(void){
     nes_memset(nes, 0, sizeof(nes_t));
     nes_initex(nes);
     return nes;
+#endif
 }
 
 int nes_deinit(nes_t *nes){
+    if (nes == NULL) {
+        return NES_ERROR;
+    }
     nes->nes_quit = 1;
     nes_deinitex(nes);
-    if (nes){
+#if (NES_USE_STATIC_INSTANCE == 0)
+    {
         nes_free(nes);
-        nes = NULL;
     }
+#endif
     return NES_OK;
 }
 
@@ -455,9 +478,7 @@ void nes_run(nes_t* nes){
             if (nes->nes_frame_skip_count == 0)
 #endif
             {
-                if (nes->nes_draw_line != NULL){
-                    nes->nes_draw_line(nes, line_data, nes->scanline);
-                }
+                nes_draw_line(nes, line_data, nes->scanline);
             }
 #endif
             nes_opcode(nes,85); // ppu cycles: 85*3=255
